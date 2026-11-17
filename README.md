@@ -37,7 +37,7 @@ npm run dev
 
 ## Configuration
 
-Copy `.env.example` to `.env`. Every value is optional.
+Copy `.env.example` to `.env` in the folder you start the server from. Every value is optional. The server reads that file itself at startup (no extra package), and a variable already set in the environment takes precedence over the file.
 
 | Variable | Purpose |
 | --- | --- |
