@@ -1,0 +1,53 @@
+{
+  "name": "backchaining-software",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Live backchaining workshop: participants build goal → state → action models on their phones, a facilitator runs one question at a time, and an explorer lets everyone inspect each person's model with replaceable calculation strategies.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n server,web -c blue,magenta \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:server": "tsx watch --disable-warning=ExperimentalWarning server/index.ts",
+    "dev:web": "vite --config web/vite.config.ts",
+    "build": "npm run build:web && npm run build:server",
+    "build:web": "vite build --config web/vite.config.ts",
+    "build:server": "esbuild server/index.ts --bundle --platform=node --format=esm --target=node22 --packages=external --outfile=dist/server/index.js && cp server/squiggleWorker.mjs dist/server/squiggleWorker.mjs",
+    "start": "node --disable-warning=ExperimentalWarning dist/server/index.js",
+    "typecheck": "tsc -p tsconfig.shared.json --noEmit && tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.web.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "check": "npm run typecheck && npm run test && npm run build"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.9",
+    "@quri/squiggle-lang": "^0.10.0",
+    "hono": "^4.13.0",
+    "ws": "^8.23.0",
+    "zod": "^4.6.0"
+  },
+  "devDependencies": {
+    "@dagrejs/dagre": "^1.1.5",
+    "@playwright/test": "^1.65.0",
+    "@types/node": "^22.15.0",
+    "@types/qrcode": "^1.5.5",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@types/ws": "^8.18.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "@xyflow/react": "^12.8.0",
+    "concurrently": "^9.1.0",
+    "esbuild": "^0.25.0",
+    "qrcode": "^1.5.4",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-router": "^7.6.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.8.0",
+    "vite": "^7.0.0",
+    "vitest": "^3.2.0"
+  }
+}

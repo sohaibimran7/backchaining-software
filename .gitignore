@@ -1,0 +1,14 @@
+node_modules/
+dist/
+data/
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+.env
+.env.local
+test-results/
+playwright-report/
+blob-report/
+_archive/
+.DS_Store
