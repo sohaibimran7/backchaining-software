@@ -11,7 +11,7 @@ export default defineConfig({
   webServer: {
     // Runs the production build against a throwaway database.
     // Many workshops are created per minute here, far beyond the production rate limits.
-    command: `RATE_LIMIT_SCALE=100 PORT=${port} DATA_DIR=./data/e2e-${Date.now()} node --disable-warning=ExperimentalWarning dist/server/index.js`,
+    command: `GITHUB_BACKUP=off RATE_LIMIT_SCALE=100 PORT=${port} DATA_DIR=./data/e2e-${Date.now()} node --disable-warning=ExperimentalWarning dist/server/index.js`,
     url: `http://localhost:${port}/api/health`,
     reuseExistingServer: false,
     timeout: 30_000,

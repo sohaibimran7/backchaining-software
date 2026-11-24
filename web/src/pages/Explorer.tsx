@@ -479,6 +479,103 @@ function HistoryPanel({ view, workshopId, accessKey }: { view: WorkshopView; wor
   );
 }
 
+interface GithubStatus {
+  available: boolean;
+  reason?: string;
+  login?: string;
+  repo: string;
+  exists?: boolean;
+  isPrivate?: boolean;
+  url?: string;
+}
+
+/** Keep a copy of the whole workshop: on this computer, or in the organizer's own private GitHub repository. */
+function SaveWorkshop({ view, workshopId, accessKey }: { view: WorkshopView; workshopId: string; accessKey: string }) {
+  const { busy, run } = useAction();
+  const [where, setWhere] = useState<'computer' | 'github'>('computer');
+  const [status, setStatus] = useState<GithubStatus | null>(null);
+  const [saved, setSaved] = useState<{ url: string; created: boolean } | null>(null);
+  // Look before saving: is anyone signed in, and does the repository already exist?
+  useEffect(() => {
+    if (where !== 'github') return;
+    setStatus(null);
+    api<GithubStatus>(`/api/workshops/${workshopId}/backup/github`, { key: accessKey }).then(setStatus, (err: Error) => setStatus({ available: false, repo: '', reason: err.message }));
+  }, [where, workshopId, accessKey, saved]);
+  return (
+    <section className="card card-pad stack">
+      <h2>{view.mode === 'solo' ? 'The whole model' : 'The whole workshop'}</h2>
+      <p className="small muted">
+        Everything, including the full history, as one file. It contains every participant’s answers, so treat it as private. It does not contain anyone’s access links. To open a saved copy later, use “Import from a file” on the start page.
+      </p>
+      <div className="stack-sm" role="radiogroup" aria-label="Where to save a copy">
+        <span className="label">Where do you want the copy saved?</span>
+        <button type="button" role="radio" className="option-btn" aria-checked={where === 'computer'} onClick={() => setWhere('computer')}>
+          <span className="option-radio" aria-hidden />
+          <span>
+            On this computer
+            <span className="small muted" style={{ display: 'block', fontWeight: 400 }}>Downloads a file to keep wherever you like.</span>
+          </span>
+        </button>
+        <button type="button" role="radio" className="option-btn" aria-checked={where === 'github'} onClick={() => setWhere('github')}>
+          <span className="option-radio" aria-hidden />
+          <span>
+            In my private GitHub repository
+            <span className="small muted" style={{ display: 'block', fontWeight: 400 }}>Keeps a versioned copy in a private repository on your own GitHub account.</span>
+          </span>
+        </button>
+      </div>
+      {where === 'computer' && (
+        <div>
+          <button className="btn btn-primary" disabled={busy} onClick={() => void run(async () => downloadJson(`${slug(view.title)}-workshop.json`, await api(`/api/workshops/${workshopId}/export`, { key: accessKey })))}>
+            Download the file
+          </button>
+        </div>
+      )}
+      {where === 'github' && (
+        <div className="stack-sm">
+          {!status && <p className="small muted">Checking your GitHub…</p>}
+          {status && !status.available && <div className="banner banner-warn small">{status.reason}</div>}
+          {status?.available && (
+            <>
+              <div className="banner small">
+                Signed in to GitHub as <strong>{status.login}</strong>.{' '}
+                {status.exists ? (
+                  <>
+                    The private repository <strong>{status.repo}</strong> already exists and will be used.
+                  </>
+                ) : (
+                  <>
+                    There is no repository called <strong>{status.repo}</strong> yet, so a <strong>private</strong> one will be created.
+                  </>
+                )}
+              </div>
+              {view.mode !== 'solo' && Object.keys(view.participants).length > 0 && <p className="small muted">This saves everyone’s answers to your account. Make sure the people in the workshop are happy with that.</p>}
+              <div>
+                <button
+                  className="btn btn-primary"
+                  disabled={busy}
+                  onClick={() => void run(async () => setSaved(await api<{ url: string; created: boolean }>(`/api/workshops/${workshopId}/backup/github`, { body: {}, key: accessKey })), 'Saved to GitHub')}
+                >
+                  Save to GitHub
+                </button>
+              </div>
+            </>
+          )}
+          {saved && (
+            <div className="banner banner-ok small">
+              Saved{saved.created ? ' (the private repository was created)' : ''}.{' '}
+              <a href={saved.url} target="_blank" rel="noreferrer">
+                Open it on GitHub
+              </a>
+              . Please do not rename the repository: the app finds it by name.
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function DataPanel({ view, workshopId, accessKey, model, modelName, modelKey }: { view: WorkshopView; workshopId: string; accessKey: string; model: ParticipantModel | null; modelName: string; modelKey: string }) {
   const { busy, run } = useAction();
   const isOrganizer = view.role.type === 'facilitator';
@@ -527,28 +624,7 @@ function DataPanel({ view, workshopId, accessKey, model, modelName, modelKey }: 
           </div>
           {!model && <p className="tiny muted">Choose a person’s map or a combined map on the Map tab first.</p>}
         </section>
-        {isOrganizer && (
-          <section className="card card-pad stack">
-            <h2>The whole workshop</h2>
-            <p className="small muted">
-              Everything, including the full history, as one file. Import it from the start page to reopen it on this or another server. It contains every participant’s answers, so treat it as private. It does not contain anyone’s
-              access links.
-            </p>
-            <div>
-              <button
-                className="btn btn-primary"
-                disabled={busy}
-                onClick={() =>
-                  void run(async () => {
-                    downloadJson(`${slug(view.title)}-workshop.json`, await api(`/api/workshops/${workshopId}/export`, { key: accessKey }));
-                  })
-                }
-              >
-                Download the workshop
-              </button>
-            </div>
-          </section>
-        )}
+        {isOrganizer && <SaveWorkshop view={view} workshopId={workshopId} accessKey={accessKey} />}
       </div>
     </div>
   );

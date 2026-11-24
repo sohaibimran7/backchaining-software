@@ -18,6 +18,7 @@ export interface Store {
   createWorkshop(row: WorkshopRow, firstEvents: StoredEvent[]): void;
   getWorkshop(id: string): WorkshopRow | undefined;
   getWorkshopByCode(code: string): WorkshopRow | undefined;
+  listWorkshops(): WorkshopRow[];
   appendEvent(workshopId: string, event: StoredEvent): void;
   listEvents(workshopId: string): StoredEvent[];
   setParticipantKey(workshopId: string, participantId: string, keyHash: string): void;
@@ -40,6 +41,9 @@ export class MemoryStore implements Store {
   }
   getWorkshopByCode(code: string) {
     return [...this.workshops.values()].find((w) => w.joinCode === code);
+  }
+  listWorkshops() {
+    return [...this.workshops.values()];
   }
   appendEvent(workshopId: string, event: StoredEvent): void {
     this.events.get(workshopId)!.push(structuredClone(event));
@@ -114,6 +118,9 @@ export class SqliteStore implements Store {
   }
   getWorkshopByCode(code: string) {
     return this.toRow(this.db.prepare('SELECT * FROM workshops WHERE join_code = ?').get(code) as Record<string, unknown> | undefined);
+  }
+  listWorkshops(): WorkshopRow[] {
+    return (this.db.prepare('SELECT * FROM workshops ORDER BY created_at').all() as Record<string, unknown>[]).map((r) => this.toRow(r)!);
   }
   appendEvent(workshopId: string, event: StoredEvent): void {
     this.insertEvent(workshopId, event);

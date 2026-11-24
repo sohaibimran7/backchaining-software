@@ -4,6 +4,7 @@ import { bodyLimit } from 'hono/body-limit';
 import crypto from 'node:crypto';
 import os from 'node:os';
 import { CommandError, type Role } from '../shared/types';
+import type { GithubBackup } from './githubBackup';
 import type { WorkshopService } from './service';
 
 export interface AppOptions {
@@ -11,6 +12,13 @@ export interface AppOptions {
   createSecret?: string;
   allowedOrigins?: string[];
   port: number;
+  /** Saving copies to the server operator's private GitHub repository, if set up. */
+  githubBackup?: GithubBackup;
+  /**
+   * Who may use it. 'local' (the default): only a browser on the same computer as the server, since the
+   * copy goes to whoever is signed in to GitHub there. 'on': any organizer. 'off': nobody.
+   */
+  githubBackupAccess?: 'local' | 'on' | 'off';
   /** Multiplies every rate limit. 1 in production; raised only for automated test servers. */
   rateLimitScale?: number;
   /** Returns a caller address for rate limiting. */
@@ -163,6 +171,32 @@ export function createApp(service: WorkshopService, options: AppOptions) {
   app.post('/api/workshops/:id/participants/:pid/key', small, (c) => {
     const id = c.req.param('id');
     return c.json({ participantKey: service.issueParticipantKey(id, roleOf(c, id), c.req.param('pid')) });
+  });
+
+  // — saving a copy to GitHub —
+  const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+  const githubAllowed = (c: Context): string | null => {
+    const access = options.githubBackupAccess ?? 'local';
+    if (!options.githubBackup || access === 'off') return 'Saving to GitHub is not set up on this server.';
+    if (access === 'local' && !LOOPBACK.has(address(c))) return 'Saving to GitHub is only offered on the computer the app is running on, because the copy goes to the GitHub account signed in there.';
+    return null;
+  };
+
+  app.get('/api/workshops/:id/backup/github', async (c) => {
+    const id = c.req.param('id');
+    if (roleOf(c, id).type !== 'facilitator') throw new CommandError('forbidden', 'Only the organizer can save the whole workshop.');
+    const blocked = githubAllowed(c);
+    if (blocked) return c.json({ available: false, repo: options.githubBackup?.repo ?? '', reason: blocked });
+    return c.json(await options.githubBackup!.status());
+  });
+
+  app.post('/api/workshops/:id/backup/github', small, async (c) => {
+    const id = c.req.param('id');
+    const role = roleOf(c, id);
+    const file = service.exportData(id, role); // organizer only
+    const blocked = githubAllowed(c);
+    if (blocked) throw new CommandError('forbidden', blocked);
+    return c.json(await options.githubBackup!.save(file, id));
   });
 
   app.all('/api/*', (c) => c.json({ error: 'Not found' }, 404));

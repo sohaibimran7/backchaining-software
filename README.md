@@ -47,6 +47,9 @@ Copy `.env.example` to `.env` in the folder you start the server from. Every val
 | `ALLOWED_ORIGINS` | Extra origins allowed to call the API |
 | `CREATE_WORKSHOP_SECRET` | If set, creating or importing a workshop needs this phrase |
 | `CALCULATION_TIME_LIMIT_MS` | Longest a calculation may run before it is terminated |
+| `GITHUB_BACKUP` | Who may save copies to GitHub: `local` (default), `on`, or `off` |
+| `GITHUB_BACKUP_REPO` | Name of the private repository for copies (default `backchaining-models`) |
+| `GITHUB_TOKEN` | Optional token for GitHub saves; otherwise the `gh` sign-in is used |
 
 Everything about a workshop's content is configured per workshop from **Configure** in the organizer view, and can be exported and imported as JSON: wording and colours, stages, question templates, the calculation method and its settings, the default way estimates are pooled, privacy defaults. No code change is needed to reword a question or add a stage.
 
@@ -60,6 +63,25 @@ The server is one Node process that serves the API, the websocket and the built 
 4. Set `CREATE_WORKSHOP_SECRET` so strangers cannot create workshops.
 
 It is not designed for serverless platforms: live sync needs a process that stays up. To use Postgres or Supabase instead of SQLite, implement the small `Store` interface in `server/store.ts`; nothing else touches the database. No hosted service or paid account is needed to run the app.
+
+## Saving and backing up
+
+Workshops live in `DATA_DIR/workshops.sqlite` on the server and are saved automatically as people work.
+
+The **Save** tab asks where to keep a copy of a workshop:
+
+- **On this computer** downloads one JSON file with the full history.
+- **In my private GitHub repository** saves the same file to a private repository called `backchaining-models` on the GitHub account signed in on the server's computer (through `gh auth login`, or `GITHUB_TOKEN`). The app checks for the repository first, creates it as private only if it is missing, adds a README asking that it not be renamed, and refuses to write to a repository of that name that is public. By default this is offered only in a browser on the same computer as the server; see `GITHUB_BACKUP` in `.env.example`.
+
+Either copy is reopened with **Import from a file** on the start page. GitHub is a backup here, not live storage.
+
+To export every workshop in one step from the command line:
+
+```bash
+npm run backup -- /path/to/folder
+```
+
+This writes one JSON file per workshop, in the same format the Save tab downloads and the start page imports. If the folder is a git repository, the files are committed and pushed too. The files contain every participant's answers, so the folder and any repository it is pushed to should be private. Do not put them in a public repository or a fork of this one (forks of a public repository are public).
 
 ## Tests
 

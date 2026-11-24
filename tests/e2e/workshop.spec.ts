@@ -227,6 +227,17 @@ test('solo mode: one person builds, connects and gets a result without anyone el
   await expect(page.getByText('+8', { exact: true })).toBeVisible();
   await expect(page.getByText(/chance of the goal is/i)).toHaveCount(0); // changes only, never an absolute chance
 
+  // Saving asks where: this computer, or a private GitHub repository (switched off on the test server, so nothing leaves it).
+  await page.getByRole('tab', { name: 'Save' }).click();
+  await expect(page.getByText('Where do you want the copy saved?')).toBeVisible();
+  await expect(page.getByRole('radio', { name: /On this computer/ })).toBeChecked();
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download the file' }).click();
+  expect((await download).suggestedFilename()).toBe('my-model-workshop.json');
+  await page.getByRole('radio', { name: /In my private GitHub repository/ }).click();
+  await expect(page.getByText('Saving to GitHub is not set up on this server.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Save to GitHub' })).toHaveCount(0);
+
   // Reopen from the start page: the work is still there.
   await page.goto('/');
   await page.getByRole('link', { name: 'Explore' }).first().click();

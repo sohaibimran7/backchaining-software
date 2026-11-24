@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { Role } from '../shared/types';
 import { createApp } from './app';
+import { createGithubBackup, DEFAULT_BACKUP_REPO, localToken } from './githubBackup';
 import { WorkshopService } from './service';
 import { createSquiggleEngine } from './squiggleEngine';
 import { SqliteStore } from './store';
@@ -34,6 +35,8 @@ const app = createApp(service, {
   createSecret: process.env.CREATE_WORKSHOP_SECRET?.trim() || undefined,
   allowedOrigins,
   port,
+  githubBackup: createGithubBackup({ token: localToken, repo: process.env.GITHUB_BACKUP_REPO?.trim() || DEFAULT_BACKUP_REPO }),
+  githubBackupAccess: (['local', 'on', 'off'] as const).find((x) => x === process.env.GITHUB_BACKUP) ?? 'local',
   rateLimitScale: Math.max(1, Number(process.env.RATE_LIMIT_SCALE ?? 1) || 1),
   clientAddress: (c) => {
     try {

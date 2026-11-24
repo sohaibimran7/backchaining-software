@@ -6,6 +6,7 @@ import { exportFileSchema } from '../../shared/commands';
 import { buildParticipantModel } from '../../shared/model';
 import { getMethod } from '../../shared/calc/registry';
 import { createApp } from '../../server/app';
+import { exportAll } from '../../server/backup';
 import { WorkshopService } from '../../server/service';
 import { MemoryStore, SqliteStore } from '../../server/store';
 import { ENGINE, FAC, seeded, setup } from './helpers';
@@ -81,6 +82,24 @@ describe('persistence', () => {
     const summaries = t.view().history.map((h) => h.summary).join('\n');
     expect(summaries).toContain('Alex answered');
     expect(summaries).not.toContain('"yes"');
+  });
+
+  it('backs up every workshop as a file that imports cleanly, and reruns without duplicating', () => {
+    const t = seeded();
+    t.service.create({ title: 'A second: one!' });
+    const dir = path.join(path.dirname(tempDb()), 'backup');
+    const first = exportAll(t.store, dir);
+    expect(first.length).toBe(2);
+    expect(first.some((f) => /^a-second-one--[a-z0-9]+\.json$/.test(f))).toBe(true);
+    t.fac({ type: 'set_title', title: 'Renamed workshop' });
+    const second = exportAll(t.store, dir);
+    expect(fs.readdirSync(dir).sort()).toEqual([...second].sort()); // the renamed one replaced its old file
+    expect(second.some((f) => f.startsWith('renamed-workshop--'))).toBe(true);
+    const before = fs.readFileSync(path.join(dir, second[0]!), 'utf8');
+    exportAll(t.store, dir);
+    expect(fs.readFileSync(path.join(dir, second[0]!), 'utf8')).toBe(before); // unchanged workshop, identical file
+    const restored = t.service.importData(JSON.parse(fs.readFileSync(path.join(dir, second.find((f) => f.startsWith('renamed-workshop--'))!), 'utf8')));
+    expect(t.service.view(restored.workshopId, FAC).nodes).toEqual(t.view().nodes);
   });
 
   it('refuses tampered or malformed import files', () => {
