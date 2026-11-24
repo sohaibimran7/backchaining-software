@@ -175,7 +175,44 @@ export function multiplyRanges(a: Range, b: Range): Range {
 }
 
 /** Direct change along an arrow as a range, in probability units (0.2 = 20 percentage points). */
-export function directEffect(link: ModelLinkInput, settings: LocalAdditiveSettings): { ok: true; range: Range; stale: boolean } | { ok: false; why: string } {
+/** How a method variant reads one arrow's direct change from a person's answers. */
+export type ReadEffect = (
+  link: ModelLinkInput,
+  settings: LocalAdditiveSettings,
+) => { ok: true; range: Range; stale: boolean; role: string; chanceWithout?: Range } | { ok: false; why: string };
+
+function usableChance(belief: Belief | undefined, settings: LocalAdditiveSettings): { ok: true; range: Range; stale: boolean } | { ok: false; why: string } {
+  if (!belief || belief.state === 'unanswered') return { ok: false, why: 'no estimate yet' };
+  if (belief.state === 'unsure') return { ok: false, why: 'answered "not sure"' };
+  if (belief.value.kind !== 'probability') return { ok: false, why: 'no estimate yet' };
+  const stale = belief.stale || belief.needsReview;
+  if (stale && settings.staleAnswers === 'treat-as-missing') return { ok: false, why: 'the estimate needs review after a definition or the time horizon changed' };
+  const margin = settings.pointEstimateMargin / 100;
+  const { p, low, high } = belief.value;
+  const range =
+    low !== undefined && high !== undefined
+      ? { low: clamp(Math.min(low, high), 0, 1), high: clamp(Math.max(low, high), 0, 1) }
+      : { low: clamp(p - margin, 0, 1), high: clamp(p + margin, 0, 1) };
+  return { ok: true, range, stale };
+}
+
+/** The change along an arrow, derived from two chances: the next thing if this happens, and if it does not. */
+export const effectFromTwoChances: ReadEffect = (link, settings) => {
+  const withIt = usableChance(link.beliefs[ROLES.probIfSource], settings);
+  const without = usableChance(link.beliefs[ROLES.probIfNoSource], settings);
+  if (!withIt.ok) return { ok: false, why: `chance if it happens: ${withIt.why}` };
+  if (!without.ok) return { ok: false, why: `chance if it does not happen: ${without.why}` };
+  return {
+    ok: true,
+    // The widest change consistent with both ranges.
+    range: { low: withIt.range.low - without.range.high, high: withIt.range.high - without.range.low },
+    stale: withIt.stale || without.stale,
+    role: ROLES.probIfSource,
+    chanceWithout: without.range,
+  };
+};
+
+export const directEffect: ReadEffect = (link, settings) => {
   const belief: Belief | undefined = link.beliefs[ROLES.directChange];
   if (!belief || belief.state === 'unanswered') return { ok: false, why: 'no estimate yet of how much it changes the next thing' };
   if (belief.state === 'unsure') return { ok: false, why: 'answered "not sure" about how much it changes the next thing' };
@@ -188,8 +225,8 @@ export function directEffect(link: ModelLinkInput, settings: LocalAdditiveSettin
     low !== undefined && high !== undefined
       ? { low: clamp(Math.min(low, high), -1, 1), high: clamp(Math.max(low, high), -1, 1) }
       : { low: clamp(d - margin, -1, 1), high: clamp(d + margin, -1, 1) };
-  return { ok: true, range, stale };
-}
+  return { ok: true, range, stale, role: ROLES.directChange };
+};
 
 /** One action whose change can be calculated: the items on its routes, in order, and the arrows into each. */
 export interface PlannedAction {
@@ -202,7 +239,7 @@ export interface PlannedAction {
 
 /** What the semantic checks let through: arrow ranges by generated name, and the actions to calculate. */
 export interface AdditivePlan {
-  links: Record<string, Range & { linkId: string; questionId?: string }>;
+  links: Record<string, Range & { linkId: string; role: string; questionId?: string }>;
   actions: PlannedAction[];
 }
 
@@ -222,8 +259,8 @@ export function compileAdditivePlan(plan: AdditivePlan): FormulaProgram {
   const outputs: string[] = [];
   for (const [v, l] of Object.entries(plan.links)) {
     lines.push(`${v}_lo = ${literal(l.low)}`, `${v}_hi = ${literal(l.high)}`);
-    sources[`${v}_lo`] = { kind: 'link', id: l.linkId, role: ROLES.directChange, questionId: l.questionId, bound: 'low' };
-    sources[`${v}_hi`] = { kind: 'link', id: l.linkId, role: ROLES.directChange, questionId: l.questionId, bound: 'high' };
+    sources[`${v}_lo`] = { kind: 'link', id: l.linkId, role: l.role, questionId: l.questionId, bound: 'low' };
+    sources[`${v}_hi`] = { kind: 'link', id: l.linkId, role: l.role, questionId: l.questionId, bound: 'high' };
   }
   for (const a of plan.actions) {
     const nodeVar = new Map(a.order.map((id, i) => [id, `${a.key}_n${i}`]));
@@ -287,7 +324,8 @@ export function evaluatePlanReference(plan: AdditivePlan): Record<string, number
   return values;
 }
 
-export function prepareLocalAdditive(model: ParticipantModel, settings: LocalAdditiveSettings): PreparedCalculation & { plan: AdditivePlan } {
+export function prepareLocalAdditive(model: ParticipantModel, settings: LocalAdditiveSettings, readEffect: ReadEffect = directEffect): PreparedCalculation & { plan: AdditivePlan } {
+  const roles = new Map<string, string>();
   const diagnostics: Diagnostic[] = [];
   const plan: AdditivePlan = { links: {}, actions: [] };
   const linkVars = new Map<string, string>();
@@ -392,13 +430,22 @@ export function prepareLocalAdditive(model: ParticipantModel, settings: LocalAdd
         reasons.push(`${linkName(l)}: the answer needs review after a definition changed.`);
         continue;
       }
-      const d = directEffect(l, settings);
+      const d = readEffect(l, settings);
       if (!d.ok) {
         missing.push(l);
         reasons.push(`${linkName(l)}: ${d.why}.`);
         continue;
       }
       usedStale ||= d.stale || l.stanceStale;
+      roles.set(l.id, d.role);
+      // Two chances make a contradiction visible that a single change cannot show.
+      if (d.chanceWithout && d.chanceWithout.high > 0.02 && requirementsHeld.some((r) => r.from === l.from && r.to === l.to) && !diagnostics.some((x) => x.code === 'requirement-inconsistent' && x.linkIds?.[0] === l.id))
+        diagnostics.push({
+          severity: 'warning',
+          code: 'requirement-inconsistent',
+          message: `${name(l.from)} is marked as required for ${name(l.to)}, yet ${name(l.to)} was given a chance of happening without it. One of the two answers may need another look.`,
+          linkIds: [l.id],
+        });
       effects.set(l.id, d.range);
     }
     if (missing.length) {
@@ -416,7 +463,8 @@ export function prepareLocalAdditive(model: ParticipantModel, settings: LocalAdd
         if (!v) {
           v = `e${linkVars.size}`;
           linkVars.set(l.id, v);
-          plan.links[v] = { ...effects.get(l.id)!, linkId: l.id, questionId: l.questionIds?.[ROLES.directChange] };
+          const role = roles.get(l.id) ?? ROLES.directChange;
+          plan.links[v] = { ...effects.get(l.id)!, linkId: l.id, role, questionId: l.questionIds?.[role] };
         }
         return { from: l.from, linkVar: v };
       });
@@ -532,3 +580,73 @@ export function rankByRange(estimated: ActionResult[], totalActions: number): Ra
       : `Covers ${estimated.length} of ${totalActions} actions. ${left} could not be estimated and ${left === 1 ? 'is' : 'are'} not placed — which is not the same as ranking last.`,
   };
 }
+
+// — a second variant: ask for two chances per arrow instead of one change —
+
+const TWO_HELP =
+  'Assume everything else goes the way you expect, including what people outside this room are likely to do anyway. Count only the direct push on “{to}”, not what happens by way of other items on the map.';
+
+const twoChanceTemplates: QuestionTemplate[] = [
+  { id: 'chance-if-we-act', title: 'Chance if we do it', prompt: 'If people in this room do “{from}”, how likely is “{to}” by {horizon}?', fromKinds: ['action'], role: ROLES.probIfSource },
+  { id: 'chance-if-we-dont', title: 'Chance if we do not', prompt: 'If nobody in this room does “{from}”, how likely is “{to}” by {horizon}?', fromKinds: ['action'], role: ROLES.probIfNoSource },
+  { id: 'chance-if-happens', title: 'Chance if it happens', prompt: 'If “{from}” happens, how likely is “{to}” by {horizon}?', fromKinds: ['state', 'goal'], role: ROLES.probIfSource },
+  { id: 'chance-if-not', title: 'Chance if it does not', prompt: 'If “{from}” does not happen, how likely is “{to}” by {horizon}?', fromKinds: ['state', 'goal'], role: ROLES.probIfNoSource },
+].map(
+  (t): QuestionTemplate => ({
+    id: t.id,
+    title: t.title,
+    prompt: t.prompt,
+    help: TWO_HELP,
+    subject: { type: 'link', relations: ['influence'], fromKinds: t.fromKinds as ('action' | 'state' | 'goal')[] },
+    answer: { type: 'probability', allowRange: true },
+    stageId: 'estimates',
+    generate: 'when-method-requires',
+    role: t.role,
+    allowUnsure: true,
+    version: 1,
+  }),
+);
+
+/**
+ * Same arithmetic and the same safeguards as the method above; only the questions differ.
+ * Each arrow gets two chances, and the change is the difference between them. That costs a second
+ * answer per arrow, but an answer near 0% or 100% now says something a bare change cannot,
+ * which is what makes pooling in log-odds possible when maps are combined.
+ */
+export const twoChances: CalculationMethod<LocalAdditiveSettings> = {
+  ...localAdditive,
+  id: 'local-additive-two-chances',
+  version: '1.0.0',
+  name: 'Rank actions from two chances per arrow (local additive approximation)',
+  summary:
+    'Asks, for each arrow, how likely the next thing is if this happens and if it does not, and takes the difference as the change. Then ranks actions exactly as the added-up-changes method does. It still reports only changes to the chance of the goal, never that chance itself, and gives no number or rank wherever its assumptions visibly fail.',
+  assumptions: [
+    'Both chances for an arrow are judged against the same expected future: everything else as the person expects, including what others are likely to do, differing only in whether this one thing happens.',
+    'The change along an arrow is the first chance minus the second. With ranges, the widest change consistent with both ranges is used.',
+    ...localAdditive.assumptions.slice(1),
+  ],
+  limits: [
+    'Two chances per arrow still do not say how several causes of the same thing combine. This is an approximation for ranking, not a causal model.',
+    ...localAdditive.limits.slice(1),
+  ],
+  requiredInputs: [
+    'For each arrow from an action: how likely the state it points at is if people here do it, and if nobody here does.',
+    'For each other arrow: how likely the next item is if the first happens, and if it does not.',
+    'Two answers per arrow. “Not sure” on either leaves the affected actions unranked.',
+  ],
+  example: {
+    ...localAdditive.example,
+    caption: 'The two chances for each arrow, written as “if it happens / if not”.',
+    arrows: [
+      { from: 'a1', to: 's1', label: '70 / 20' },
+      { from: 'a2', to: 's2', label: '60 / 30' },
+      { from: 's1', to: 's2', label: '55 / 40' },
+      { from: 's1', to: 'g', label: '50 / 30' },
+      { from: 's2', to: 'g', label: '50 / 35' },
+    ],
+    outcome: 'Changes are +50, +30, +15, +20, +15. Action 1: 0.50 × (0.20 + 0.15 × 0.15) ≈ +11 points. Action 2: 0.30 × 0.15 ≈ +5 points. Action 1 ranks first.',
+  },
+  consumes: [ROLES.linkStance, ROLES.probIfSource, ROLES.probIfNoSource],
+  elicitation: twoChanceTemplates,
+  prepare: (model, settings) => prepareLocalAdditive(model, settings, effectFromTwoChances),
+};

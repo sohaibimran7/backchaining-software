@@ -7,7 +7,7 @@ import type { WorkshopView } from '@shared/types';
 import { downloadJson, slug } from '../lib/api';
 import { Modal, useAction } from '../lib/ui';
 import { ExampleDiagram } from './ResultsPanel';
-import { SettingsForm } from './SettingsForm';
+import { MethodNotes, SettingsForm } from './SettingsForm';
 
 type Send = (command: Record<string, unknown>) => Promise<void>;
 type Section = 'wording' | 'stages' | 'questions' | 'methods' | 'privacy' | 'advanced';
@@ -221,16 +221,7 @@ export function ConfigEditor({ view, send, onClose }: { view: WorkshopView; send
                     </ul>
                     <ExampleDiagram example={method.example} />
                   </div>
-                  <details open>
-                    <summary className="small" style={{ cursor: 'pointer', fontWeight: 600 }}>
-                      Assumptions and limits
-                    </summary>
-                    <ul className="small" style={{ paddingLeft: 18 }}>
-                      {[...method.assumptions, ...method.limits].map((a) => (
-                        <li key={a}>{a}</li>
-                      ))}
-                    </ul>
-                  </details>
+                  <MethodNotes assumptions={method.assumptions} limits={method.limits} />
                   <SettingsForm
                     fields={method.settingsFields}
                     value={{ ...(method.defaultSettings as object), ...((draft.calculation.settings[method.id] as object) ?? {}) }}
@@ -251,6 +242,7 @@ export function ConfigEditor({ view, send, onClose }: { view: WorkshopView; send
               {aggregation && (
                 <>
                   <p className="small">{aggregation.summary}</p>
+                  <MethodNotes assumptions={aggregation.assumptions} limits={aggregation.limits} />
                   <SettingsForm
                     fields={aggregation.settingsFields}
                     value={{ ...(aggregation.defaultSettings as object), ...(draft.aggregation.settings as object) }}

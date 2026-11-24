@@ -2,12 +2,12 @@
  * The method registry. This is the only place the app learns which
  * calculation methods exist. Add yours to the array below.
  */
-import { localAdditive } from './localAdditive';
+import { localAdditive, twoChances } from './localAdditive';
 import { structureDiagnostic } from './structureDiagnostic';
 import type { CalculationMethod } from './types';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const methods: CalculationMethod<any>[] = [structureDiagnostic, localAdditive];
+const methods: CalculationMethod<any>[] = [structureDiagnostic, localAdditive, twoChances];
 
 export const DEFAULT_METHOD_ID = structureDiagnostic.id;
 

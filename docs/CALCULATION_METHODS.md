@@ -77,6 +77,20 @@ How several people's answers to the same question are pooled for a combined mode
 
 `aggregate(input, settings)` receives each contributor's state (`answered`, `unsure`, `unanswered`, `needs-review`) and number, plus `conditionsDiffer`, which is true when the people answering had different arrows into the target in their own maps or the combined map differs from theirs. It returns an optional pooled value, who was used, who was unsure or missing, the spread, and whether the value should be re-asked.
 
-Shipped: **Do not pool estimates** (the default) and **Simple average (each person counts equally)**. The average leaves out unsure, missing and out-of-date answers, shows the spread, and by default does not average answers given under different conditions.
+The input also carries `unit`: whether the numbers are chances or changes in a chance. A method that only makes sense for one must decline the other.
+
+Shipped:
+
+- **Do not pool estimates** (the default).
+- **Simple average (each person counts equally).** Pulled by outliers; a guess and a well-evidenced answer count the same.
+- **Middle estimate (median).** One extreme answer cannot move it; a real minority view has no pull.
+- **Average weighted by how narrow each person's range is.** Lets people signal how sure they are through the range they already give. Each person's share is shown. Overconfident people gain influence, and a floor on range width stops anyone dominating by claiming certainty.
+- **Average of the odds (for chances only).** The geometric mean of odds. An answer near 0% or 100% pulls harder than in a plain average. It refuses to pool a change in a chance, so it is used with the two-chances method. It reflects evidence about how likely the next thing is, not about how big the gap between the two chances is.
+
+All of them leave out unsure, missing and out-of-date answers, show the spread, and by default do not pool answers given under different conditions. These shared safeguards live in one helper (`pool` in `shared/aggregate/methods.ts`), so a new method only supplies how to combine the usable estimates.
+
+## The two-chances variant
+
+`local-additive-two-chances` reuses the ranking method's checks, formulas and safeguards and changes only how an arrow's change is read: from two chances (the next item if this happens, and if it does not) instead of one stated change. With ranges, the widest change consistent with both ranges is used. A method variant is made by passing a different `ReadEffect` to `prepareLocalAdditive`.
 
 Pooling inputs is not averaging results. Calculation results are never averaged across people; a combined model's result is computed from its pooled inputs.

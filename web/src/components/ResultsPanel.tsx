@@ -4,7 +4,7 @@ import { getMethod, listMethods } from '@shared/calc/registry';
 import type { ActionResult, MethodExample, MethodOutput } from '@shared/calc/types';
 import type { CalculationRun, WorkshopView } from '@shared/types';
 import { Empty, timeAgo, useAction } from '../lib/ui';
-import { SettingsForm } from './SettingsForm';
+import { MethodNotes, SettingsForm } from './SettingsForm';
 
 type Send = (command: Record<string, unknown>) => Promise<void>;
 
@@ -81,21 +81,8 @@ export function ResultsPanel({ view, send, onSelectItem }: { view: WorkshopView;
                     </ul>
                     <ExampleDiagram example={method.example} />
                   </div>
-                  <div className="stack-sm">
-                    <h4>This method assumes</h4>
-                    <ul className="small" style={{ margin: 0, paddingLeft: 18 }}>
-                      {method.assumptions.map((a) => (
-                        <li key={a}>{a}</li>
-                      ))}
-                    </ul>
-                    <h4 style={{ marginTop: 8 }}>What it cannot do</h4>
-                    <ul className="small" style={{ margin: 0, paddingLeft: 18 }}>
-                      {method.limits.map((a) => (
-                        <li key={a}>{a}</li>
-                      ))}
-                    </ul>
-                  </div>
                 </div>
+                <MethodNotes assumptions={method.assumptions} limits={method.limits} />
                 <div className="stack" style={{ maxWidth: 640 }}>
                   <h4>Settings</h4>
                   <SettingsForm fields={method.settingsFields} value={settings} onChange={(next) => setSettingsBy((s) => ({ ...s, [methodId]: next }))} />

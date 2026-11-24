@@ -26,6 +26,8 @@ export interface Contribution {
 
 export interface AggregationInput {
   contributions: Contribution[];
+  /** What the numbers are: chances (0–1) or changes in a chance (−1 to +1). Some ways of pooling only make sense for one. */
+  unit: 'probability' | 'difference';
   /**
    * True when the people answering had different things feeding into the target in their own maps,
    * or the combined map differs from theirs — so "everything else as you expect" did not mean the same for all.
@@ -40,6 +42,8 @@ export interface AggregationResult {
   unsure: string[];
   missing: string[];
   needsReview: string[];
+  /** When people did not count equally: each person's share of the pooled number (adds up to 1). */
+  weights?: Record<string, number>;
   /** Lowest and highest individual estimates among those used. */
   spread?: { min: number; max: number };
   /** True when the pooled number should be re-elicited before it is relied on. */

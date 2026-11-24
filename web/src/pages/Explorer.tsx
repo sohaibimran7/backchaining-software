@@ -380,7 +380,8 @@ function Loaded({ view, status, send, workshopId, accessKey }: { view: WorkshopV
                       onSaved={() => {
                         // Move straight on to the next arrow that still needs an answer, if any.
                         const rest = Object.keys(missing).filter((id) => id !== asking);
-                        setAsking((needed[asking] ?? []).length > 1 ? asking : (rest[0] ?? null));
+                        const stillOpenHere = (needed[asking] ?? []).some((other) => other !== qid && !latestAnswer(view, other, actingId));
+                        setAsking(stillOpenHere ? asking : (rest[0] ?? null));
                       }}
                     />
                   ) : (

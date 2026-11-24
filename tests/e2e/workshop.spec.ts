@@ -143,6 +143,18 @@ test('a live workshop: questions reach both phones, answers stay separate, arrow
   await organizer.getByRole('tab', { name: 'Combine' }).click();
   await organizer.getByRole('button', { name: 'Start a combined map' }).click();
   await expect(organizer.getByText(/Simply putting everyone’s arrows together would make a loop/)).toBeVisible();
+  // Every way of pooling shows what it assumes and where it falls short, the moment it is chosen.
+  for (const [name, limitation] of [
+    ['Simple average (each person counts equally)', /A well-evidenced answer and a guess count the same/],
+    ['Middle estimate (median)', /a real minority view has no pull/],
+    ['Average weighted by how narrow each person’s range is', /Overconfident people gain influence/],
+    ['Average of the odds (for chances only)', /cannot pool a change in a chance/],
+  ] as const) {
+    await organizer.getByLabel('How to pool estimates').selectOption({ label: name });
+    await expect(organizer.getByRole('heading', { name: 'This assumes' })).toBeVisible();
+    await expect(organizer.getByRole('heading', { name: 'Limitations' })).toBeVisible();
+    await expect(organizer.getByText(limitation)).toBeVisible();
+  }
 
   await organizerContext.close();
   await alex.context().close();
@@ -184,6 +196,13 @@ test('solo mode: one person builds, connects and gets a result without anyone el
   // Switch to the ranking method: each arrow now shows one "?" marker for what the method still needs.
   await page.getByLabel('Calculation method').selectOption({ label: 'Rank actions by added-up probability changes (local additive approximation)' });
   await expect(page.getByText('What it needs from people')).toBeVisible();
+  // Assumptions and limitations are shown in full as soon as a method is selected.
+  await expect(page.getByRole('heading', { name: 'This assumes' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Limitations' })).toBeVisible();
+  await expect(page.getByText('It does not give the chance of the goal, only estimated changes to it.')).toBeVisible();
+  await page.getByLabel('Calculation method').selectOption({ label: 'Rank actions from two chances per arrow (local additive approximation)' });
+  await expect(page.getByText(/Two chances per arrow still do not say how several causes/)).toBeVisible();
+  await page.getByLabel('Calculation method').selectOption({ label: 'Rank actions by added-up probability changes (local additive approximation)' });
   await expect(page.getByRole('img', { name: /Example: Changes in percentage points/ })).toBeVisible();
   await page.getByRole('button', { name: 'Use this method for the workshop' }).click();
   await page.getByRole('tab', { name: 'Map' }).click();

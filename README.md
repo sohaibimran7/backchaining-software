@@ -74,10 +74,12 @@ npm run test:e2e
 
 ## How results are calculated
 
-Two methods ship. Both are in `shared/calc/` and neither is built into the user interface.
+Three methods ship. All are in `shared/calc/` and none is built into the user interface. Whenever a method is selected, its assumptions and limitations are shown in full beside it.
 
 - **Structure only (no ranking)** — the default. Describes each model: which actions connect to the goal, what is marked as required, where routes narrow, what is unknown. Produces no numbers.
 - **Rank actions by added-up probability changes (local additive approximation)** — opt-in. For each arrow it asks one thing: how many percentage points the first item changes the chance of the next, compared with the same expected course of events without it. It ranks actions by their estimated change to the chance of the goal. It never states the chance of the goal itself. It withholds the number and the rank wherever its assumptions visibly fail: a loop, something marked as required, an arrow that holds only under some conditions, or added-up changes larger than a chance can change by. Missing and "not sure" answers make a result incomplete, never zero.
+
+- **Rank actions from two chances per arrow (local additive approximation)** — opt-in. The same arithmetic and safeguards, but it asks two questions per arrow: how likely the next item is if this one happens, and if it does not. The change is the difference. It costs a second answer per arrow. In return, an answer near 0% or 100% carries information a bare change cannot, which allows pooling in log-odds, and a requirement contradicted by the answers is flagged.
 
 Differences between pairs of items do not, in general, determine how things interact. The second method is an approximation for ranking under stated assumptions, which are shown in the method picker, beside every result, and stored with every run. See [docs/CALCULATION_METHODS.md](docs/CALCULATION_METHODS.md) for the contract and how to add a method.
 
@@ -85,7 +87,7 @@ Differences between pairs of items do not, in general, determine how things inte
 
 - The ranking method is one defensible approximation, not a settled science. The method contract exists so it can be replaced.
 - Loops are refused everywhere in this version, including an item connected to itself.
-- Pooling estimates is a plain equal-weight average of answers to the same question. Answers given against different surroundings are not averaged by default; they are listed for re-asking.
+- Pooling estimates is off by default. Four ways are available: a simple average, the middle estimate (median), an average weighted by how narrow each person's range is, and an average of the odds (chances only, so it needs the two-chances method). None of them recovers evidence people did not express; a reveal-and-re-estimate round does that better. Answers given against different surroundings are not pooled by default; they are listed for re-asking.
 - Access is by unguessable links held in the browser, not accounts. Losing the organizer link means losing organizer access to that workshop.
 - A merge of two items cannot be undone in place. Use **History → Open a copy as of here** to recover an earlier state as a separate workshop.
 - Results are drawn as ranges and tiers. Squiggle's chart components are not used, because this version produces no probability distributions to plot.

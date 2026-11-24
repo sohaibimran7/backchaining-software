@@ -1,9 +1,9 @@
 /** The only place the app learns which aggregation methods exist. Add yours to the array. */
-import { equalMean, noPooling } from './methods';
+import { equalMean, logOdds, median, noPooling, rangeWeighted } from './methods';
 import type { AggregationMethod } from './types';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const methods: AggregationMethod<any>[] = [noPooling, equalMean];
+const methods: AggregationMethod<any>[] = [noPooling, equalMean, median, rangeWeighted, logOdds];
 
 export function listAggregations(): AggregationMethod<unknown>[] {
   return methods;

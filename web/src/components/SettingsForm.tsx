@@ -54,3 +54,34 @@ export function SettingsForm({ fields, value, onChange, disabled }: { fields: Se
     </div>
   );
 }
+
+/**
+ * What a method takes for granted and what it cannot do. Shown, in full and not folded away,
+ * wherever any calculation or pooling method is selected.
+ */
+export function MethodNotes({ assumptions, limits }: { assumptions: string[]; limits: string[] }) {
+  return (
+    <div className="method-notes">
+      <div className="stack-sm">
+        <h4>This assumes</h4>
+        <ul className="small">
+          {assumptions.map((a) => (
+            <li key={a}>{a}</li>
+          ))}
+        </ul>
+      </div>
+      <div className="stack-sm">
+        <h4>Limitations</h4>
+        {limits.length === 0 ? (
+          <p className="small muted">None beyond the assumptions.</p>
+        ) : (
+          <ul className="small">
+            {limits.map((a) => (
+              <li key={a}>{a}</li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}

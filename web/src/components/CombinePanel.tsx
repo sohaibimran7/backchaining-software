@@ -9,7 +9,7 @@ import { pct, points } from '@shared/model';
 import { previewSynthesis, type ArrowReview } from '@shared/synthesis';
 import type { Synthesis, WorkshopView } from '@shared/types';
 import { Empty, useAction } from '../lib/ui';
-import { SettingsForm } from './SettingsForm';
+import { MethodNotes, SettingsForm } from './SettingsForm';
 
 type Send = (command: Record<string, unknown>) => Promise<void>;
 
@@ -308,21 +308,8 @@ function Builder({ view, send, people, existing, onDone, onSelectItem }: { view:
               {method && (
                 <>
                   <p className="small">{method.summary}</p>
-                  <div className="cols">
-                    <div className="stack-sm">
-                      <h4>This assumes</h4>
-                      <ul className="small" style={{ margin: 0, paddingLeft: 18 }}>
-                        {method.assumptions.map((a) => (
-                          <li key={a}>{a}</li>
-                        ))}
-                      </ul>
-                      {method.limits.length > 0 && <h4 style={{ marginTop: 8 }}>Limits</h4>}
-                      <ul className="small" style={{ margin: 0, paddingLeft: 18 }}>
-                        {method.limits.map((a) => (
-                          <li key={a}>{a}</li>
-                        ))}
-                      </ul>
-                    </div>
+                  <MethodNotes assumptions={method.assumptions} limits={method.limits} />
+                  <div style={{ maxWidth: 640 }}>
                     <SettingsForm fields={method.settingsFields} value={settings} onChange={(next) => setSettingsBy((s) => ({ ...s, [methodId]: next }))} />
                   </div>
                 </>
@@ -361,6 +348,7 @@ function Builder({ view, send, people, existing, onDone, onSelectItem }: { view:
                                   {view.participants[c.participantId]?.name}:{' '}
                                   {c.state === 'unsure' ? <em>not sure</em> : c.state === 'unanswered' ? <em className="muted">no answer</em> : c.low !== undefined && c.high !== undefined ? `${show(c.p!)} (${show(c.low)} to ${show(c.high)})` : show(c.p!)}
                                   {c.state === 'needs-review' && <span className="chip chip-warn" style={{ marginLeft: 6 }}>given before a change</span>}
+                                  {e.result.weights?.[c.participantId] !== undefined && <span className="muted"> · counts {Math.round(e.result.weights[c.participantId]! * 100)}%</span>}
                                 </div>
                               ))}
                             </td>

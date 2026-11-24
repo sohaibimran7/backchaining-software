@@ -242,20 +242,20 @@ describe('pooling estimates is a replaceable method', () => {
   const c = (participantId: string, state: 'answered' | 'unsure' | 'unanswered' | 'needs-review', p?: number, low?: number, high?: number) => ({ participantId, state, p, low, high });
 
   it('averages only real answers; unsure and missing are listed, never counted as zero', () => {
-    const r = equalMean.aggregate({ contributions: [c('a', 'answered', 0.2), c('b', 'answered', 0.6), c('c', 'unsure'), c('d', 'unanswered'), c('e', 'needs-review', 0.9)], conditionsDiffer: false }, equalMean.defaultSettings);
+    const r = equalMean.aggregate({ contributions: [c('a', 'answered', 0.2), c('b', 'answered', 0.6), c('c', 'unsure'), c('d', 'unanswered'), c('e', 'needs-review', 0.9)], unit: 'probability' as const, conditionsDiffer: false }, equalMean.defaultSettings);
     expect(r.value!.p).toBeCloseTo(0.4, 10);
     expect(r.value).toMatchObject({ low: 0.2, high: 0.6 });
     expect(r).toMatchObject({ used: ['a', 'b'], unsure: ['c'], missing: ['d'], needsReview: ['e'], spread: { min: 0.2, max: 0.6 }, flagged: false });
   });
 
   it('gives no number rather than a guess when too few people answered or nobody did', () => {
-    expect(equalMean.aggregate({ contributions: [c('a', 'answered', 0.2), c('b', 'unsure')], conditionsDiffer: false }, equalMean.defaultSettings).value).toBeUndefined();
-    expect(equalMean.aggregate({ contributions: [c('a', 'unsure'), c('b', 'unanswered')], conditionsDiffer: false }, equalMean.defaultSettings).value).toBeUndefined();
-    expect(equalMean.aggregate({ contributions: [c('a', 'answered', 0.2)], conditionsDiffer: false }, { ...equalMean.defaultSettings, minContributors: 1 }).value!.p).toBe(0.2);
+    expect(equalMean.aggregate({ contributions: [c('a', 'answered', 0.2), c('b', 'unsure')], unit: 'probability' as const, conditionsDiffer: false }, equalMean.defaultSettings).value).toBeUndefined();
+    expect(equalMean.aggregate({ contributions: [c('a', 'unsure'), c('b', 'unanswered')], unit: 'probability' as const, conditionsDiffer: false }, equalMean.defaultSettings).value).toBeUndefined();
+    expect(equalMean.aggregate({ contributions: [c('a', 'answered', 0.2)], unit: 'probability' as const, conditionsDiffer: false }, { ...equalMean.defaultSettings, minContributors: 1 }).value!.p).toBe(0.2);
   });
 
   it('does not average answers given under different conditions unless told to, and then flags them', () => {
-    const input = { contributions: [c('a', 'answered', 0.2), c('b', 'answered', 0.6)], conditionsDiffer: true };
+    const input = { contributions: [c('a', 'answered', 0.2), c('b', 'answered', 0.6)], unit: 'probability' as const, conditionsDiffer: true };
     const withheld = equalMean.aggregate(input, equalMean.defaultSettings);
     expect(withheld.value).toBeUndefined();
     expect(withheld.flagged).toBe(true);
@@ -265,7 +265,7 @@ describe('pooling estimates is a replaceable method', () => {
   });
 
   it('"do not pool" never produces a number, and a new method can be registered', () => {
-    expect(noPooling.aggregate({ contributions: [c('a', 'answered', 0.2), c('b', 'answered', 0.6)], conditionsDiffer: false }, {}).value).toBeUndefined();
+    expect(noPooling.aggregate({ contributions: [c('a', 'answered', 0.2), c('b', 'answered', 0.6)], unit: 'probability' as const, conditionsDiffer: false }, {}).value).toBeUndefined();
     const median: AggregationMethod<Record<string, never>> = {
       ...noPooling,
       id: 'test-median',
@@ -277,7 +277,7 @@ describe('pooling estimates is a replaceable method', () => {
       },
     };
     registerAggregation(median);
-    expect(getAggregation('test-median')!.aggregate({ contributions: [c('a', 'answered', 0.1), c('b', 'answered', 0.5), c('c', 'answered', 0.9)], conditionsDiffer: false }, {}).value!.p).toBe(0.5);
+    expect(getAggregation('test-median')!.aggregate({ contributions: [c('a', 'answered', 0.1), c('b', 'answered', 0.5), c('c', 'answered', 0.9)], unit: 'probability' as const, conditionsDiffer: false }, {}).value!.p).toBe(0.5);
   });
 });
 
@@ -539,5 +539,133 @@ describe('privacy of calculation runs', () => {
     t.fac({ type: 'set_settings', shareModels: true });
     expect(JSON.stringify(t.view(P(t.sam)))).toContain('0.123456');
     expect(Object.keys(t.view(P(t.sam)).runs[0]!.programs!).length).toBe(3);
+  });
+});
+
+describe('more ways to pool, and a method that makes them possible', () => {
+  const c = (participantId: string, p: number, low?: number, high?: number) => ({ participantId, state: 'answered' as const, p, low, high });
+  const agg = (id: string) => getAggregation(id)!;
+  const run = (id: string, contributions: ReturnType<typeof c>[], settings: Record<string, unknown> = {}, unit: 'probability' | 'difference' = 'probability', conditionsDiffer = false) =>
+    agg(id).aggregate({ contributions, unit, conditionsDiffer }, { ...(agg(id).defaultSettings as object), ...settings });
+
+  it('median: one extreme answer does not move the pooled number', () => {
+    expect(run('median', [c('a', 0.2), c('b', 0.25), c('c', 0.95)]).value!.p).toBe(0.25);
+    expect(run('median', [c('a', 0.2), c('b', 0.3)]).value!.p).toBeCloseTo(0.25, 12);
+    expect(run('equal-mean', [c('a', 0.2), c('b', 0.25), c('c', 0.95)]).value!.p).toBeCloseTo(0.4667, 3); // the mean is dragged
+    expect(run('median', [c('a', 0.2), c('b', 0.25), c('c', 0.95)]).spread).toEqual({ min: 0.2, max: 0.95 }); // disagreement stays visible
+  });
+
+  it('range-weighted: a narrower range counts for more, shares are reported, and nobody dominates by claiming certainty', () => {
+    const r = run('range-weighted-mean', [c('sure', 0.8, 0.75, 0.85), c('vague', 0.4, 0.2, 0.6)]);
+    expect(r.weights!.sure).toBeCloseTo(0.8, 12); // widths 0.10 and 0.40 → shares 4 : 1
+    expect(r.value!.p).toBeCloseTo(0.8 * 0.8 + 0.4 * 0.2, 12);
+    expect(run('range-weighted-mean', [c('sure', 0.8, 0.75, 0.85), c('vague', 0.4, 0.2, 0.6)], { strength: 'strong' }).weights!.sure).toBeCloseTo(16 / 17, 12);
+    // No range given: counted as the widest range anyone gave.
+    expect(run('range-weighted-mean', [c('sure', 0.8, 0.75, 0.85), c('vague', 0.4, 0.2, 0.6), c('none', 0.1)]).weights!.none).toBeCloseTo(1 / 6, 12);
+    // Nobody gave a range: plain average, said so, no weights invented.
+    const flat = run('range-weighted-mean', [c('a', 0.2), c('b', 0.4)]);
+    expect(flat.value!.p).toBeCloseTo(0.3, 12);
+    expect(flat.weights).toBeUndefined();
+    expect(flat.note).toMatch(/nobody gave a range/);
+    // A range of zero width is treated as the narrowest allowed, not as infinite weight.
+    expect(run('range-weighted-mean', [c('certain', 0.9, 0.9, 0.9), c('other', 0.5, 0.45, 0.55)]).weights!.certain).toBeCloseTo(2 / 3, 12);
+  });
+
+  it('log-odds: an answer near certainty pulls harder than in a plain average, and exact 0% or 100% cannot decide alone', () => {
+    const r = run('log-odds-mean', [c('a', 0.5), c('b', 0.98)]);
+    expect(r.value!.p).toBeCloseTo(0.875, 12); // odds 1 and 49 → geometric mean 7 → 7/8
+    expect(r.value!.p).toBeGreaterThan(run('equal-mean', [c('a', 0.5), c('b', 0.98)]).value!.p);
+    expect(run('log-odds-mean', [c('a', 0.2), c('b', 0.8)]).value!.p).toBeCloseTo(0.5, 12);
+    const capped = run('log-odds-mean', [c('a', 0.5), c('b', 1)]).value!.p;
+    expect(capped).toBeLessThan(1);
+    expect(capped).toBeCloseTo(1 / (1 + Math.exp(-Math.log(99) / 2)), 12);
+  });
+
+  it('log-odds refuses to pool a change in a chance, rather than producing nonsense', () => {
+    const r = run('log-odds-mean', [c('a', 0.2), c('b', 0.4)], {}, 'difference');
+    expect(r.value).toBeUndefined();
+    expect(r.note).toMatch(/only works for chances/);
+    expect(run('median', [c('a', 0.2), c('b', -0.4)], {}, 'difference').value!.p).toBeCloseTo(-0.1, 12); // the others handle changes, signs included
+  });
+
+  it('every pooling method keeps the shared safeguards and declares assumptions and limitations', () => {
+    for (const id of ['equal-mean', 'median', 'range-weighted-mean', 'log-odds-mean']) {
+      expect(agg(id).assumptions.length).toBeGreaterThan(2);
+      expect(agg(id).limits.length).toBeGreaterThan(2);
+      expect(run(id, [c('a', 0.3)]).value).toBeUndefined(); // too few people
+      expect(run(id, [c('a', 0.3), c('b', 0.5)], {}, 'probability', true).value).toBeUndefined(); // conditions differ
+      expect(run(id, [c('a', 0.3), c('b', 0.5)], { whenConditionsDiffer: 'use-and-flag' }, 'probability', true).flagged).toBe(true);
+      const mixed = agg(id).aggregate({ unit: 'probability' as const, conditionsDiffer: false, contributions: [c('a', 0.3), c('b', 0.5), { participantId: 'u', state: 'unsure' }, { participantId: 'm', state: 'unanswered' }] }, agg(id).defaultSettings);
+      expect(mixed).toMatchObject({ used: ['a', 'b'], unsure: ['u'], missing: ['m'] });
+    }
+  });
+
+  it('two chances per arrow give the same ranking as the equivalent changes, and expose a contradicted requirement', async () => {
+    const { evaluateMethod } = await import('../../shared/calc/types');
+    const { twoChances, localAdditive } = await import('../../shared/calc/localAdditive');
+    const chance = (p: number, low?: number, high?: number) => ({ state: 'answered' as const, value: { kind: 'probability' as const, p, low, high }, stale: false, needsReview: false });
+    const arrow = (from: string, to: string, yes: number, no: number) => ({ id: `${from}>${to}`, from, to, relation: 'influence' as const, stance: 'yes' as const, stanceStale: false, beliefs: { [ROLES.probIfSource]: chance(yes), [ROLES.probIfNoSource]: chance(no) } });
+    const links = [arrow('A1', 'S1', 0.7, 0.2), arrow('A2', 'S2', 0.6, 0.3), arrow('S1', 'S2', 0.55, 0.4), arrow('S1', 'G', 0.5, 0.3), arrow('S2', 'G', 0.5, 0.35)];
+    const model = { participantId: 'p', goalId: 'G', horizon: '2030', links, nodes: ['A1', 'A2', 'S1', 'S2', 'G'].map((id) => ({ id, label: id, kind: id === 'G' ? ('goal' as const) : id.startsWith('A') ? ('action' as const) : ('state' as const), beliefs: {} })) };
+    const { output, program } = await evaluateMethod(twoChances, model, twoChances.defaultSettings, ENGINE);
+    const of = (id: string) => output.actions.find((a) => a.actionId === id)!;
+    expect(of('A1').effect!.low).toBeCloseTo(0.11125, 10);
+    expect(of('A2').effect!.low).toBeCloseTo(0.045, 10);
+    expect(output.ranking!.tiers).toEqual([['A1'], ['A2']]);
+    expect(Object.values(program!.sources).find((s) => s.kind === 'link')!.role).toBe(ROLES.probIfSource);
+    expect(twoChances.assumptions.length).toBeGreaterThan(3);
+    expect(twoChances.limits[0]).toMatch(/do not say how several causes/);
+    expect(twoChances.consumes).not.toContain(ROLES.directChange);
+    expect(localAdditive.consumes).not.toContain(ROLES.probIfSource);
+
+    // One of the two chances missing or "not sure": incomplete, never zero.
+    const partial = structuredClone(model);
+    partial.links[1]!.beliefs[ROLES.probIfNoSource] = { state: 'unsure', stale: false } as never;
+    const p = (await evaluateMethod(twoChances, partial, twoChances.defaultSettings, ENGINE)).output;
+    expect(p.actions.find((a) => a.actionId === 'A2')).toMatchObject({ status: 'incomplete' });
+    expect(p.ranking).toMatchObject({ tiers: [['A1']], complete: false });
+
+    // Ranges: the widest change consistent with both.
+    const ranged = { ...model, links: [{ ...arrow('A1', 'G', 0.6, 0.3), beliefs: { [ROLES.probIfSource]: chance(0.6, 0.5, 0.7), [ROLES.probIfNoSource]: chance(0.3, 0.2, 0.4) } }] };
+    expect((await evaluateMethod(twoChances, ranged, twoChances.defaultSettings, ENGINE)).output.actions.find((a) => a.actionId === 'A1')!.effect).toEqual({ low: expect.closeTo(0.1, 10), high: expect.closeTo(0.5, 10) });
+
+    // Marked as required, yet given a chance of happening without it: flagged.
+    const contradicted = { ...model, links: [...links, { id: 'req', from: 'S2', to: 'G', relation: 'requirement' as const, stance: 'yes' as const, stanceStale: false, beliefs: {} }] };
+    const out = (await evaluateMethod(twoChances, contradicted, { ...twoChances.defaultSettings, requirementPolicy: 'withhold-when-routes-combine' }, ENGINE)).output;
+    expect(out.diagnostics.some((d) => d.code === 'requirement-inconsistent')).toBe(true);
+  });
+
+  it('end to end: two-chance questions appear only for that method, and combined maps can pool them in log-odds', async () => {
+    const t = seeded();
+    const has = (id: string) => Object.values(t.view().questions).some((q) => q.templateId === id && q.status === 'draft');
+    expect(has('chance-if-happens')).toBe(false);
+    const config = structuredClone(t.view().config);
+    config.calculation.methodId = 'local-additive-two-chances';
+    t.fac({ type: 'set_config', config });
+    expect(has('chance-if-happens') && has('chance-if-not') && has('chance-if-we-act') && has('chance-if-we-dont')).toBe(true);
+    expect(has('change-from-state')).toBe(false);
+
+    t.fac({ type: 'set_settings', layers: { connections: { open: true }, estimates: { open: true } } });
+    const lid = `l:i:${t.A1}>${t.G}`;
+    const q = (tpl: string) => questionId(tpl, { type: 'link', linkId: lid });
+    for (const [pid, yes, no] of [
+      [t.alex, 0.5, 0.2],
+      [t.sam, 0.98, 0.2],
+    ] as const) {
+      t.as(pid)({ type: 'hold_link', from: t.A1, to: t.G, hold: true });
+      t.as(pid)({ type: 'answer', questionId: q('chance-if-we-act'), value: { kind: 'probability', p: yes }, via: 'explorer' });
+      t.as(pid)({ type: 'answer', questionId: q('chance-if-we-dont'), value: { kind: 'probability', p: no }, via: 'explorer' });
+    }
+    t.fac({ type: 'save_synthesis', name: 'Pooled in odds', contributors: [t.alex, t.sam], decisions: {}, aggregation: { methodId: 'log-odds-mean', settings: { range: 'none' } } });
+    const syn = Object.values(t.view().syntheses)[0]!;
+    const preview = previewSynthesis(t.view(), syn);
+    const yes = preview.estimates.find((e) => e.role === ROLES.probIfSource)!;
+    expect(yes.unit).toBe('probability');
+    expect(yes.result.value!.p).toBeCloseTo(0.875, 10);
+    await t.calc({ methodId: 'local-additive-two-chances', acknowledged: true });
+    const run = t.view().runs[0]!;
+    expect(run.outputs[`syn:${syn.id}`]!.actions.find((a) => a.actionId === t.A1)!.effect!.low).toBeCloseTo(0.875 - 0.2, 10);
+    expect(run.outputs[t.alex]!.actions.find((a) => a.actionId === t.A1)!.effect!.low).toBeCloseTo(0.3, 10); // personal results untouched
+    expect(run.methodId).toBe('local-additive-two-chances');
   });
 });

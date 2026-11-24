@@ -151,7 +151,7 @@ export function previewSynthesis(state: WorkshopState, spec: Pick<SynthesisVersi
         const target = combinedParents(a.to);
         const conditionsDiffer = answering.some((pid) => ownParents(pid, a.to) !== target);
         const unit = [...by.values()].some((l) => { const b = l.beliefs[role]; return b?.state === 'answered' && b.value.kind === 'difference'; }) ? 'difference' : 'probability';
-        estimates.push({ linkId: a.linkId, role, roleLabel: roleWords(role), unit, result: method.aggregate({ contributions: individual, conditionsDiffer }, settings), conditionsDiffer, individual });
+        estimates.push({ linkId: a.linkId, role, roleLabel: roleWords(role), unit, result: method.aggregate({ contributions: individual, unit, conditionsDiffer }, settings), conditionsDiffer, individual });
       }
     }
   }
